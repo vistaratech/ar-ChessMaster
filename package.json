@@ -8,17 +8,17 @@
     "web": "expo start --web"
   },
   "dependencies": {
-    "@react-native-async-storage/async-storage": "^1.23.1",
+    "@react-native-async-storage/async-storage": "^2.1.2",
     "@shopify/react-native-skia": "^1.5.0",
     "chess.js": "^1.4.0",
     "dawikk-stock": "^0.9.83",
-    "expo": "~52.0.37",
-    "expo-status-bar": "~2.0.1",
-    "react": "18.3.1",
-    "react-native": "0.76.7",
+    "expo": "~58.0.19",
+    "expo-status-bar": "~58.0.4",
+    "react": "19.3.0",
+    "react-native": "0.88.0",
     "react-native-nitro-image": "^0.15.2",
     "react-native-nitro-modules": "^0.37.1",
-    "react-native-reanimated": "~3.16.1",
+    "react-native-reanimated": "^4.7.1",
     "react-native-vision-camera": "^5.2.3",
     "react-native-vision-camera-resizer": "^5.2.3",
     "react-native-vision-camera-worklets": "^5.2.3",
@@ -27,8 +27,8 @@
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
-    "@types/react": "~18.3.12",
-    "typescript": "^5.3.3"
+    "@types/react": "~19.3.0",
+    "typescript": "~6.0.3"
   },
   "private": true
 }
