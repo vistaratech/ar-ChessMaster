@@ -1,0 +1,19 @@
+{
+  "project": "ar-chess",
+  "platform": "ios",
+  "github": {
+    "owner": "vistaratech",
+    "repo": "ar-ChessMaster"
+  },
+  "ios": {
+    "path": "ios"
+  },
+  "flutter": {
+    "watch": {}
+  },
+  "reactNative": {
+    "expo": true
+  },
+  "kmp": {},
+  "mobai": {}
+}

@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+.expo/
+.expo-shared/
+
+# Build artifacts
+dist/
+web-build/
+
+# Native build artifacts
+ios/Pods/
+ios/build/
+ios/*.xcworkspace/xcuserdata
+ios/*.xcodeproj/xcuserdata
+
+# Binary tools & logs
+builder.exe
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment & Certificates
+.env*
+*.p12
+*.cer
+*.mobileprovision
+*.pem
+
+# macOS / Windows system files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "AR Chess Coach",
+    "slug": "ar-chess",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "bundleIdentifier": "com.yohesh.archess",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Chess board scan panna camera venum"
+      }
+    },
+    "android": {
+      "package": "com.yohesh.archess",
+      "permissions": ["android.permission.CAMERA"]
+    },
+    "plugins": [
+      [
+        "react-native-vision-camera",
+        {
+          "cameraPermissionText": "Chess board scan panna camera venum"
+        }
+      ]
+    ]
+  }
+}
