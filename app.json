@@ -14,14 +14,6 @@
     "android": {
       "package": "com.yohesh.archess",
       "permissions": ["android.permission.CAMERA"]
-    },
-    "plugins": [
-      [
-        "react-native-vision-camera",
-        {
-          "cameraPermissionText": "Chess board scan panna camera venum"
-        }
-      ]
-    ]
+    }
   }
 }
