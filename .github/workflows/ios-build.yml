@@ -114,9 +114,21 @@ jobs:
         if: (steps.detect.outputs.type == 'reactnative' || steps.detect.outputs.type == 'expo') && steps.node-modules-cache.outputs.cache-hit != 'true'
         run: npm install --legacy-peer-deps
 
+      - name: Run postinstall scripts
+        if: steps.detect.outputs.type == 'reactnative' || steps.detect.outputs.type == 'expo'
+        run: npm run postinstall --if-present
+
       - name: Expo Prebuild (Generate iOS native project)
         if: steps.detect.outputs.type == 'expo'
         run: npx expo prebuild --platform ios --clean --no-install
+
+      - name: Configure iOS Node Environment
+        if: steps.detect.outputs.type == 'reactnative' || steps.detect.outputs.type == 'expo'
+        run: |
+          if [ -d "ios" ]; then
+            echo "export NODE_BINARY=$(which node)" > ios/.xcode.env.local
+            echo "Configured ios/.xcode.env.local with NODE_BINARY=$(which node)"
+          fi
 
       # A gitignored *.xcconfig next to a committed template is a common iOS
       # convention. The snapshot then carries the template but not the config,
@@ -436,7 +448,6 @@ jobs:
             BUILD_CMD="$BUILD_CMD -destination 'generic/platform=iOS'"
             BUILD_CMD="$BUILD_CMD -derivedDataPath '$DERIVED_DATA_PATH'"
             BUILD_CMD="$BUILD_CMD COMPILER_INDEX_STORE_ENABLE=NO"
-            BUILD_CMD="$BUILD_CMD -quiet"
 
             if [ "$USE_SIGNING" = "true" ]; then
               # Must archive, not build: the IPA step below exports
@@ -446,7 +457,7 @@ jobs:
               BUILD_CMD="$BUILD_CMD PROVISIONING_PROFILE_SPECIFIER='$PROVISIONING_PROFILE_NAME'"
               BUILD_CMD="$BUILD_CMD -archivePath '$GITHUB_WORKSPACE/build/App.xcarchive' archive"
             else
-              BUILD_CMD="$BUILD_CMD CODE_SIGNING_ALLOWED=NO build"
+              BUILD_CMD="$BUILD_CMD CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' build"
             fi
 
             echo "Running: $BUILD_CMD"
