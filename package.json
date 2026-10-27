@@ -2,6 +2,7 @@
   "name": "ar-chess",
   "version": "1.0.0",
   "scripts": {
+    "postinstall": "node -e \"const fs=require('fs'),p='node_modules/dawikk-stock/';if(fs.existsSync(p+'dawikk-stockfish.podspec')&&!fs.existsSync(p+'dawikk-stock.podspec'))fs.copyFileSync(p+'dawikk-stockfish.podspec',p+'dawikk-stock.podspec')\"",
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
