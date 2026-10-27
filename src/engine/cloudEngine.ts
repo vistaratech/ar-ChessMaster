@@ -82,6 +82,10 @@ export class CloudEngine implements Engine {
     if (!res.ok) throw new Error(`Engine HTTP ${res.status}`);
     const hint = parseEngineResponse(await res.json());
     this.cache.set(key, hint);
+    if (this.cache.size > 512) {
+      const first = this.cache.keys().next().value;
+      if (first !== undefined) this.cache.delete(first);
+    }
     return hint;
   }
 }

@@ -157,6 +157,11 @@ export class LocalEngine implements Engine {
         alts,
       };
       this.cache.set(key, hint);
+      if (this.cache.size > 512) {
+        // Evict oldest entry (Map preserves insertion order)
+        const first = this.cache.keys().next().value;
+        if (first !== undefined) this.cache.delete(first);
+      }
       return hint;
     } finally {
       offInfo();

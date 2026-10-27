@@ -42,8 +42,12 @@ export function inferMove(chess: Chess, observed: Occ, maxMismatch = MAX_MISMATC
   for (const mv of chess.moves({ verbose: true })) {
     if (mv.promotion && mv.promotion !== 'q') continue; // same occupancy as the queen version
     chess.move({ from: mv.from, to: mv.to, promotion: mv.promotion });
-    const mm = mismatch(occupancyOf(chess), observed);
-    chess.undo();
+    let mm: number;
+    try {
+      mm = mismatch(occupancyOf(chess), observed);
+    } finally {
+      chess.undo();
+    }
     if (mm < bestMM) {
       secondMM = bestMM;
       bestMM = mm;
