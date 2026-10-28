@@ -51,8 +51,9 @@ export function applyHomography(h: number[], p: Pt): Pt {
 }
 
 /** Board corners in board space (0..8, 0..8).
- * In White perspective: bottom-left=a1(0,0), bottom-right=h1(8,0), top-right=h8(8,8), top-left=a8(0,8).
- * In Black perspective: bottom-left=h8(8,8), bottom-right=a8(0,8), top-right=a1(0,0), top-left=h1(8,0).
+ * `BOARD_CORNERS` is the canonical order used by the app: a1(0,0), h1(8,0), h8(8,8), a8(0,8).
+ * The `perspective` variant is kept for older callers/tests; the live camera always pairs
+ * corners in physical board order (a1, h1, h8, a8), independent of the camera side.
  */
 export function getBoardCorners(perspective: 'w' | 'b' = 'w'): Pt[] {
   if (perspective === 'b') {

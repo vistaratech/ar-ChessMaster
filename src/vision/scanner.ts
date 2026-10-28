@@ -72,13 +72,17 @@ export const DEFAULT_COLOR_MODEL: ColorModel = {
   ],
 };
 
-export const isDark = (file: number, rank: number) => (file + rank) % 2 === 0; // a1 is dark
+export const isDark = (file: number, rank: number) => {
+  'worklet';
+  return (file + rank) % 2 === 0; // a1 is dark
+};
 
 /**
  * Learn the 4 classes from a frame where the position is KNOWN (e.g. the starting position).
  * Returns null if some class has fewer than 2 samples.
  */
 export function learnModel(feats: number[], occ: Occ): ColorModel | null {
+  'worklet';
   const n = [0, 0, 0, 0];
   const s = [0, 1, 2, 3].map(() => new Array(NF).fill(0));
   const q = [0, 1, 2, 3].map(() => new Array(NF).fill(0));
@@ -129,6 +133,7 @@ export function classify(feats: number[], model: ColorModel): Occ {
  * An empty board labelled as "starting position" produces classes that all look alike => low value.
  */
 export function modelQuality(m: ColorModel): number {
+  'worklet';
   const pairs = [[0, 2], [0, 3], [1, 2], [1, 3], [2, 3]];
   let min = Infinity;
   for (const [a, b] of pairs) {

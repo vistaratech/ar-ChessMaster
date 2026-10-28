@@ -20,7 +20,7 @@ export function useGame() {
   settingsRef.current = settings;
 
   const engine = useMemo(
-    () => createEngine(settings.engine ?? 'auto', settings.depth, settings.suggestions ?? 3),
+    () => createEngine(settings.engine ?? 'auto', settings.depth, settings.suggestions ?? 1),
     [settings.engine, settings.depth, settings.suggestions]
   );
 

@@ -37,8 +37,8 @@ function AppContent() {
 
   if (!hydrated) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#0a0d12', alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator size="large" color="#3b82f6" />
+      <View style={{ flex: 1, backgroundColor: '#050806', alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator size="large" color="#5CFF6A" />
       </View>
     );
   }

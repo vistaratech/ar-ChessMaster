@@ -1,5 +1,6 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Pressable,
   ScrollView,
@@ -9,98 +10,159 @@ import {
 } from 'react-native';
 import { Chess } from 'chess.js';
 import CameraBoard from '../components/CameraBoard';
-import { TOP, colors } from '../components/ui';
+import SettingsSheet from '../components/SettingsSheet';
+import { BOTTOM, IconButton, TOP, colors } from '../components/ui';
 import { useStore } from '../store/useStore';
 import { useGame, Status } from '../hooks/useGame';
-import { BUF_H, BUF_W } from '../config';
 import { classify, learnModel, modelQuality } from '../vision/scanner';
 import { mismatch, occupancyOf } from '../chess/occupancy';
 
-const STATUS_TEXT: Record<Status, string> = {
-  'needs-colors': 'Board ready aagudhu…',
-  tracking: 'Board-a paathukitte irukken…',
-  detecting: 'Move detect aachu, confirm panren…',
-  waiting: 'Board maariduchu. Kai-a edunga, clear view venum…',
-  'out-of-sync': 'Board match aagala. Undo pannunga illa tap panni move podunga.',
-  over: 'Game over',
+const WHITE_GLYPH: Record<string, string> = {
+  k: '\u2654',
+  q: '\u2655',
+  r: '\u2656',
+  b: '\u2657',
+  n: '\u2658',
+  p: '\u2659',
 };
 
-function evalText(ev: number | null, mate: number | null) {
-  if (mate !== null) return `Mate in ${Math.abs(mate)}`;
-  if (ev === null) return '—';
-  return (ev > 0 ? '+' : '') + ev.toFixed(2);
+const BLACK_GLYPH: Record<string, string> = {
+  k: '\u265A',
+  q: '\u265B',
+  r: '\u265C',
+  b: '\u265D',
+  n: '\u265E',
+  p: '\u265F\uFE0E',
+};
+
+function statusMeta(status: Status, myTurn: boolean) {
+  switch (status) {
+    case 'needs-colors':
+      return { label: 'CALIBRATE BOARD', color: colors.warn };
+    case 'detecting':
+      return { label: 'MOVE DETECTED', color: colors.green };
+    case 'waiting':
+      return { label: 'HOLD STEADY', color: colors.warn };
+    case 'out-of-sync':
+      return { label: 'OUT OF SYNC', color: colors.bad };
+    case 'over':
+      return { label: 'GAME OVER', color: colors.bad };
+    default:
+      return myTurn
+        ? { label: 'YOUR MOVE', color: colors.green }
+        : { label: 'TRACKING', color: colors.cyan };
+  }
 }
 
-export default function GameScreen({ go }: { go?: (s: any) => void }) {
+function evalText(ev: number | null, mate: number | null) {
+  if (mate !== null) return `MATE ${Math.abs(mate)}`;
+  if (ev === null) return '—';
+  return (ev > 0 ? '+' : '') + ev.toFixed(1);
+}
+
+function Action(props: {
+  glyph: string;
+  label: string;
+  onPress: () => void;
+  active?: boolean;
+  disabled?: boolean;
+}) {
+  return (
+    <Pressable
+      onPress={props.onPress}
+      disabled={props.disabled}
+      style={[styles.action, props.active && styles.actionOn, props.disabled && { opacity: 0.32 }]}
+    >
+      <Text style={[styles.actionGlyph, props.active && styles.actionTextOn]}>{props.glyph}</Text>
+      <Text style={[styles.actionLabel, props.active && styles.actionTextOn]} numberOfLines={1}>
+        {props.label}
+      </Text>
+    </Pressable>
+  );
+}
+
+export default function GameScreen() {
   const { corners, settings, patchSettings, newGame, setCorners, resetCorners, setModel } = useStore();
   const g = useGame();
   const [isAdjusting, setIsAdjusting] = useState(false);
   const [isAutoScanning, setIsAutoScanning] = useState(false);
   const [autoScanMsg, setAutoScanMsg] = useState('');
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const prevDetect = useRef<number[] | null>(null);
   const detectHits = useRef(0);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ignoreFeatures = useCallback(() => {}, []);
 
-  const onDetect = useCallback((c: number[], feats: number[]) => {
-    const start = occupancyOf(new Chess());
-    const m = learnModel(feats, start);
-    if (!m) return;
-    if (modelQuality(m) < 1.8 || mismatch(classify(feats, m), start) > 4) {
-      detectHits.current = 0;
-      prevDetect.current = null;
-      return;
-    }
-    const p = prevDetect.current;
-    const same = !!p && c.every((v, i) => Math.abs(v - p[i]) < 6);
-    prevDetect.current = c;
-    detectHits.current = same ? detectHits.current + 1 : 1;
-    if (detectHits.current >= 2) {
-      const detectedCorners = [0, 1, 2, 3].map((k) => ({
-        x: c[k * 2] / BUF_W,
-        y: c[k * 2 + 1] / BUF_H,
-      }));
-      setCorners(detectedCorners);
-      setModel(m);
-      setIsAutoScanning(false);
-      setAutoScanMsg('✓ Board Auto-Detected & Locked!');
-      setTimeout(() => setAutoScanMsg(''), 3500);
-    }
-  }, [setCorners, setModel]);
+  useEffect(() => {
+    return () => {
+      if (toastTimer.current) clearTimeout(toastTimer.current);
+    };
+  }, []);
+
+  const showToast = useCallback((msg: string) => {
+    setAutoScanMsg(msg);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setAutoScanMsg(''), 3200);
+  }, []);
+
+  const onDetect = useCallback(
+    (c: number[], feats: number[]) => {
+      const start = occupancyOf(new Chess());
+      const m = learnModel(feats, start);
+      if (!m) return;
+      if (modelQuality(m) < 1.8 || mismatch(classify(feats, m), start) > 4) {
+        detectHits.current = 0;
+        prevDetect.current = null;
+        return;
+      }
+      const p = prevDetect.current;
+      const same = !!p && c.every((v, i) => Math.abs(v - p[i]) < 0.02);
+      prevDetect.current = c;
+      detectHits.current = same ? detectHits.current + 1 : 1;
+      if (detectHits.current >= 2) {
+        const detectedCorners = [0, 1, 2, 3].map((k) => ({
+          x: c[k * 2],
+          y: c[k * 2 + 1],
+        }));
+        setCorners(detectedCorners);
+        setModel(m);
+        setIsAutoScanning(false);
+        showToast('BOARD LOCKED');
+      }
+    },
+    [setCorners, setModel, showToast]
+  );
 
   const isMyTurn = g.turn === settings.myColor;
   const isWhite = settings.myColor === 'w';
+  const hintsOff = settings.hints === 'off';
+  const meta = statusMeta(g.status, isMyTurn);
 
   const handleSelectColor = (color: 'w' | 'b') => {
     if (settings.myColor === color) return;
     if (g.moves.length === 0) {
       newGame(color);
     } else {
-      Alert.alert(
-        'Color மாற்றவா?',
-        'Color மாற்றினால் புதிய விளையாட்டு ஆரம்பிக்கும்.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'ஆம், மாற்று',
-            style: 'destructive',
-            onPress: () => newGame(color),
-          },
-        ]
-      );
+      Alert.alert('Change colour?', 'Changing sides starts a new game.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Change', style: 'destructive', onPress: () => newGame(color) },
+      ]);
     }
-  };
-
-  const togglePerspective = () => {
-    patchSettings({
-      perspective: settings.perspective === 'w' ? 'b' : 'w',
-    });
   };
 
   const handleNewGame = () => {
     if (g.moves.length === 0) return;
-    Alert.alert('புதிய விளையாட்டு?', 'தற்போதைய ஆட்டம் அழிக்கப்படும்.', [
+    Alert.alert('New game?', 'The current game will be cleared.', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'தொடங்கு', onPress: () => newGame(settings.myColor) },
+      { text: 'Start', style: 'destructive', onPress: () => newGame(settings.myColor) },
     ]);
+  };
+
+  const cycleHints = () => {
+    patchSettings({
+      hints: settings.hints === 'mine' ? 'always' : settings.hints === 'always' ? 'off' : 'mine',
+    });
   };
 
   const pairs: string[] = [];
@@ -108,521 +170,357 @@ export default function GameScreen({ go }: { go?: (s: any) => void }) {
     pairs.push(`${i / 2 + 1}. ${g.moves[i]}${g.moves[i + 1] ? '  ' + g.moves[i + 1] : ''}`);
   }
 
+  const glyphs = isWhite ? WHITE_GLYPH : BLACK_GLYPH;
+  const hintGlyph = g.hintPiece ? glyphs[g.hintPiece.type] ?? '' : '';
+  const evalColor =
+    g.evalPawns === null
+      ? colors.dim
+      : (isWhite ? g.evalPawns >= 0 : g.evalPawns <= 0)
+      ? colors.green
+      : colors.bad;
+
   return (
     <View style={styles.root}>
-      {/* Top Safe Area */}
-      <View style={{ height: TOP }} />
+      <CameraBoard
+        fullscreen
+        corners={corners}
+        isAdjustingCorners={isAdjusting}
+        onCornersChange={setCorners}
+        detect={isAutoScanning}
+        onDetect={onDetect}
+        onFeatures={isAdjusting || isAutoScanning ? ignoreFeatures : g.onFeatures}
+        onTap={(sq) => sq && g.tapSquare(sq)}
+        safeTop={TOP + 54}
+        safeBottom={BOTTOM + 64}
+        overlay={{
+          hint: g.hint ? { from: g.hint.from, to: g.hint.to } : null,
+          hintPiece: g.hintPiece ? { type: g.hintPiece.type, color: g.hintPiece.color } : null,
+          alts: g.alts.map((a) => ({ from: a.from, to: a.to })),
+          lastMove: g.lastMove,
+          selected: g.selected,
+          targets: g.targets,
+          check: g.checkSquare,
+          occ: settings.debug ? g.occ : null,
+          showGrid: false,
+        }}
+      />
 
-      {/* Header & Side Selection */}
-      <View style={styles.header}>
-        <View style={styles.titleRow}>
-          <Text style={styles.appTitle}>♞ AR Chess Coach</Text>
+      <View style={[styles.top, { paddingTop: TOP + 6 }]} pointerEvents="box-none">
+        <View style={styles.topRow} pointerEvents="box-none">
+          <View style={styles.statusPill}>
+            <View style={[styles.statusDot, { backgroundColor: meta.color }]} />
+            <Text style={styles.statusText} numberOfLines={1}>
+              {meta.label}
+            </Text>
+          </View>
           <View style={styles.topActions}>
-            <Pressable
-              style={[styles.iconBtn, isAutoScanning && styles.iconBtnScanning]}
-              onPress={() => {
-                const next = !isAutoScanning;
-                setIsAutoScanning(next);
-                if (next) setIsAdjusting(false);
-              }}
-            >
-              <Text style={styles.iconBtnText}>{isAutoScanning ? '⏹ Stop' : '🔍 Auto'}</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.iconBtn, isAdjusting && styles.iconBtnActive]}
+            <IconButton
+              label="⌖"
+              active={isAdjusting}
+              accessibilityLabel="Adjust board corners"
               onPress={() => {
                 const next = !isAdjusting;
                 setIsAdjusting(next);
                 if (next) setIsAutoScanning(false);
               }}
-            >
-              <Text style={styles.iconBtnText}>{isAdjusting ? '✓ Done' : '🎯 Grid'}</Text>
-            </Pressable>
-            <Pressable style={styles.iconBtn} onPress={togglePerspective}>
-              <Text style={styles.iconBtnText}>🔄 Flip</Text>
-            </Pressable>
+            />
+            <IconButton
+              label="◎"
+              active={isAutoScanning}
+              accessibilityLabel="Auto-detect board"
+              onPress={() => {
+                const next = !isAutoScanning;
+                setIsAutoScanning(next);
+                if (next) setIsAdjusting(false);
+              }}
+            />
+            <IconButton label="⚙" accessibilityLabel="Settings" onPress={() => setSettingsOpen(true)} />
           </View>
         </View>
 
-        {/* Color Choice Bar */}
-        <View style={styles.colorSelectorRow}>
-          <Text style={styles.colorPrompt}>I play / நான்:</Text>
-          <View style={styles.colorTabs}>
-            <Pressable
-              onPress={() => handleSelectColor('w')}
-              style={[styles.colorTab, isWhite && styles.colorTabActive]}
-            >
-              <Text style={[styles.colorTabText, isWhite && styles.colorTabTextActive]}>
-                ⚪ White (வெள்ளை)
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() => handleSelectColor('b')}
-              style={[styles.colorTab, !isWhite && styles.colorTabActive]}
-            >
-              <Text style={[styles.colorTabText, !isWhite && styles.colorTabTextActive]}>
-                ⚫ Black (கருப்பு)
-              </Text>
+        {isAutoScanning && !autoScanMsg && (
+          <View style={[styles.banner, styles.bannerGreen]}>
+            <Text style={styles.bannerText}>AUTO-DETECTING — SHOW THE STARTING POSITION</Text>
+            <Pressable onPress={() => setIsAutoScanning(false)} hitSlop={8}>
+              <Text style={styles.bannerAction}>STOP</Text>
             </Pressable>
           </View>
-        </View>
-      </View>
+        )}
 
-      {/* Auto-Scan Banner */}
-      {isAutoScanning && (
-        <View style={styles.autoScanBanner}>
-          <Text style={styles.autoScanBannerText}>
-            🔍 Auto-Detecting Board... போர்டை கேமராவில் நேராகக் காட்டவும் (Starting Position).
-          </Text>
-          <Pressable style={styles.cancelBtn} onPress={() => setIsAutoScanning(false)}>
-            <Text style={styles.cancelBtnText}>Stop</Text>
-          </Pressable>
-        </View>
-      )}
+        {isAdjusting && (
+          <View style={[styles.banner, styles.bannerCyan]}>
+            <Text style={styles.bannerText}>DRAG THE FOUR CYAN CORNERS ONTO THE BOARD</Text>
+            <Pressable onPress={resetCorners} hitSlop={8}>
+              <Text style={styles.bannerAction}>RESET</Text>
+            </Pressable>
+          </View>
+        )}
 
-      {/* Auto-Scan Success Toast */}
-      {!!autoScanMsg && (
-        <View style={styles.successBanner}>
-          <Text style={styles.successBannerText}>{autoScanMsg}</Text>
-        </View>
-      )}
+        {!!autoScanMsg && (
+          <View style={[styles.banner, styles.bannerToast]}>
+            <Text style={styles.bannerToastText}>✓ {autoScanMsg}</Text>
+          </View>
+        )}
 
-      {/* Adjustment Banner when adjusting corners */}
-      {isAdjusting && (
-        <View style={styles.adjustBanner}>
-          <Text style={styles.adjustBannerText}>
-            🎯 போர்டு கார்னர்களை விரலால் இழுத்து (Drag) சரியாக பொருத்தவும்.
-          </Text>
-          <Pressable style={styles.resetBtn} onPress={resetCorners}>
-            <Text style={styles.resetBtnText}>Reset to Center</Text>
-          </Pressable>
-        </View>
-      )}
-
-      {/* Live Camera + AR Chess Overlay */}
-      <View style={styles.cameraContainer}>
-        <CameraBoard
-          corners={corners}
-          perspective={settings.perspective}
-          isAdjustingCorners={isAdjusting}
-          onCornersChange={setCorners}
-          detect={isAutoScanning}
-          onDetect={onDetect}
-          onFeatures={g.onFeatures}
-          onTap={(sq) => sq && g.tapSquare(sq)}
-          overlay={{
-            hint: g.hint ? { from: g.hint.from, to: g.hint.to } : null,
-            hintPiece: g.hintPiece ? { type: g.hintPiece.type, color: g.hintPiece.color } : null,
-            alts: g.alts.map((a) => ({ from: a.from, to: a.to })),
-            lastMove: g.lastMove,
-            selected: g.selected,
-            targets: g.targets,
-            check: g.checkSquare,
-            occ: settings.debug ? g.occ : null,
-          }}
-        />
-      </View>
-
-      {/* Bottom Floating Move & Game HUD */}
-      <View style={styles.hudContainer}>
-        {/* Main Move Recommendation Card */}
-        <View style={[styles.card, isMyTurn ? styles.cardMyTurn : styles.cardOpponent]}>
-          {g.gameOverText ? (
-            <View style={styles.centerAlign}>
-              <Text style={styles.gameOverTitle}>🏆 {g.gameOverText}</Text>
-              <Text style={styles.subHint}>புதிய விளையாட்டுக்கு New Game அழுத்தவும்</Text>
-            </View>
-          ) : isMyTurn ? (
-            <View>
-              <View style={styles.turnRow}>
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>✨ UNGA TURN ({isWhite ? 'WHITE' : 'BLACK'})</Text>
-                </View>
-                <Text style={styles.evalText}>
-                  Eval: {evalText(g.evalPawns, g.mate)}
-                </Text>
-              </View>
-
-              {g.hint ? (
-                <View style={styles.moveRow}>
-                  <Text style={styles.bestMoveLabel}>Best Move:</Text>
-                  <Text style={styles.bestMoveText}>{g.hint.san ?? g.hint.uci}</Text>
-                  <Text style={styles.moveCoords}>
-                    ({g.hint.from.toUpperCase()} ➔ {g.hint.to.toUpperCase()})
-                  </Text>
-                </View>
-              ) : (
-                <Text style={styles.thinkingText}>
-                  {g.thinking ? '⏳ Stockfish யோசிக்கிறது…' : 'Move கணக்கிடப்படுகிறது…'}
-                </Text>
-              )}
-            </View>
-          ) : (
-            <View>
-              <View style={styles.turnRow}>
-                <View style={[styles.badge, styles.badgeOpponent]}>
-                  <Text style={styles.badgeOpponentText}>
-                    ⏳ OPPONENT TURN ({isWhite ? 'BLACK' : 'WHITE'})
-                  </Text>
-                </View>
-              </View>
-              <Text style={styles.waitingText}>
-                {g.detected
-                  ? `Move Detected: ${g.detected}`
-                  : 'எதிராளி நகர்த்தியதும் உங்களுக்கான Best Move AR-ல் காட்டும்…'}
-              </Text>
-              <Text style={styles.subHint}>
-                (கேமரா பார்க்கவில்லை என்றால் Piece & சதுரத்தை போர்டில் Tap செய்யலாம்)
-              </Text>
-            </View>
-          )}
-        </View>
-
-        {/* Moves History & Action Buttons */}
-        <View style={styles.actionsBar}>
-          <Pressable
-            style={[styles.actionBtn, g.moves.length === 0 && styles.btnDisabled]}
-            onPress={g.undo}
-            disabled={g.moves.length === 0}
-          >
-            <Text style={styles.actionBtnText}>↩ Undo</Text>
-          </Pressable>
-
-          <Pressable
-            style={[styles.actionBtn, g.moves.length === 0 && styles.btnDisabled]}
-            onPress={handleNewGame}
-            disabled={g.moves.length === 0}
-          >
-            <Text style={styles.actionBtnText}>🔄 New Game</Text>
-          </Pressable>
-
-          <Pressable
-            style={styles.actionBtn}
-            onPress={() =>
-              patchSettings({
-                hints: settings.hints === 'mine' ? 'always' : 'mine',
-              })
-            }
-          >
-            <Text style={styles.actionBtnText}>
-              💡 {settings.hints === 'always' ? 'All Hints' : 'My Turn'}
-            </Text>
-          </Pressable>
-        </View>
-
-        {/* Moves List (horizontal chip scroll) */}
-        {pairs.length > 0 && (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.movesScroll}
-          >
-            {pairs.map((p, idx) => (
-              <View key={idx} style={styles.moveChip}>
-                <Text style={styles.moveChipText}>{p}</Text>
-              </View>
-            ))}
-          </ScrollView>
+        {g.status === 'out-of-sync' && (
+          <View style={[styles.banner, styles.bannerRed]}>
+            <Text style={styles.bannerText}>BOARD OUT OF SYNC — UNDO OR TAP A MOVE</Text>
+          </View>
         )}
       </View>
+
+      <View style={[styles.dockWrap, { paddingBottom: BOTTOM }]} pointerEvents="box-none">
+        <View style={styles.dockCard}>
+          <View style={styles.dockTop}>
+            <View style={styles.turnWrap}>
+              <View style={[styles.turnDot, { backgroundColor: isMyTurn ? colors.green : colors.cyan }]} />
+              <Text style={styles.turnText}>
+                {g.gameOverText ? 'GAME OVER' : isMyTurn ? 'YOUR MOVE' : 'OPPONENT MOVE'}
+              </Text>
+            </View>
+            <Text style={[styles.eval, { color: evalColor }]}>{evalText(g.evalPawns, g.mate)}</Text>
+            <Pressable onPress={() => setExpanded((v) => !v)} hitSlop={10} accessibilityLabel="Toggle controls">
+              <Text style={styles.chev}>{expanded ? '⌄' : '⌃'}</Text>
+            </Pressable>
+          </View>
+
+          {expanded && (
+            <>
+              <View style={styles.bestRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.bestKicker}>
+                    {g.gameOverText
+                      ? 'RESULT'
+                      : hintsOff
+                      ? 'HINTS OFF'
+                      : isMyTurn
+                      ? 'NEXT MOVE'
+                      : 'BOARD WATCH'}
+                  </Text>
+
+                  {g.gameOverText ? (
+                    <Text style={styles.bestMove} numberOfLines={2}>
+                      {g.gameOverText}
+                    </Text>
+                  ) : isMyTurn ? (
+                    g.hint ? (
+                      <View style={styles.bestLine}>
+                        <Text style={styles.bestGlyph}>{hintGlyph}</Text>
+                        <Text style={styles.bestMove}>{g.hint.san ?? g.hint.uci}</Text>
+                        <Text style={styles.bestCoords}>
+                          {g.hint.from} → {g.hint.to}
+                        </Text>
+                      </View>
+                    ) : (
+                      <Text style={styles.bestMove}>
+                        {g.thinking ? 'THINKING…' : 'CALCULATING…'}
+                      </Text>
+                    )
+                  ) : (
+                    <Text style={styles.bestMove} numberOfLines={1}>
+                      {g.detected ? `DETECTED ${g.detected}` : 'WAITING FOR OPPONENT'}
+                    </Text>
+                  )}
+                </View>
+                {g.thinking && <ActivityIndicator size="small" color={colors.green} />}
+              </View>
+
+              {!!g.engineError && (
+                <Text style={styles.err} numberOfLines={2}>
+                  Engine: {g.engineError}
+                </Text>
+              )}
+
+              <View style={styles.actions}>
+                <Action glyph="↶" label="UNDO" disabled={g.moves.length === 0} onPress={g.undo} />
+                <Action glyph="＋" label="NEW" onPress={handleNewGame} />
+                <Action
+                  glyph="✦"
+                  label={settings.hints === 'mine' ? 'MY TURN' : settings.hints === 'always' ? 'ALWAYS' : 'OFF'}
+                  active={!hintsOff}
+                  onPress={cycleHints}
+                />
+                <Action glyph="⚙" label="SETUP" onPress={() => setSettingsOpen(true)} />
+              </View>
+
+              {pairs.length > 0 && (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.moves}
+                >
+                  {pairs.map((p, idx) => (
+                    <View key={idx} style={styles.moveChip}>
+                      <Text style={styles.moveText}>{p}</Text>
+                    </View>
+                  ))}
+                </ScrollView>
+              )}
+            </>
+          )}
+        </View>
+      </View>
+
+      <SettingsSheet
+        visible={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        settings={settings}
+        patchSettings={patchSettings}
+        onColor={handleSelectColor}
+        onNewGame={() => {
+          setSettingsOpen(false);
+          handleNewGame();
+        }}
+        onCalibrate={() => {
+          setSettingsOpen(false);
+          setIsAdjusting(true);
+          setIsAutoScanning(false);
+        }}
+        onResetCorners={resetCorners}
+        movesCount={g.moves.length}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: '#0a0d12',
-  },
-  header: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    gap: 8,
-    backgroundColor: '#0f172a',
-    borderBottomWidth: 1,
-    borderBottomColor: '#1e293b',
-  },
-  titleRow: {
+  root: { flex: 1, backgroundColor: '#000' },
+
+  top: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 20 },
+  topRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-  },
-  appTitle: {
-    color: '#f8fafc',
-    fontSize: 20,
-    fontWeight: '800',
-    letterSpacing: 0.3,
-  },
-  topActions: {
-    flexDirection: 'row',
+    paddingHorizontal: 12,
     gap: 8,
   },
-  iconBtn: {
-    backgroundColor: '#1e293b',
+  statusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    height: 36,
     paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
+    borderRadius: 18,
+    backgroundColor: 'rgba(5,10,7,0.74)',
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: 'rgba(255,255,255,0.11)',
+    flexShrink: 1,
   },
-  iconBtnActive: {
-    backgroundColor: '#f59e0b',
-    borderColor: '#d97706',
-  },
-  iconBtnScanning: {
-    backgroundColor: '#10b981',
-    borderColor: '#059669',
-  },
-  iconBtnText: {
-    color: '#f8fafc',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  colorSelectorRow: {
+  statusDot: { width: 7, height: 7, borderRadius: 4 },
+  statusText: { color: colors.text, fontSize: 10, fontWeight: '800', letterSpacing: 1.4 },
+  topActions: { flexDirection: 'row', gap: 6 },
+
+  banner: {
+    marginTop: 8,
+    marginHorizontal: 12,
+    minHeight: 38,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    borderWidth: 1,
   },
-  colorPrompt: {
-    color: '#94a3b8',
-    fontSize: 13,
-    fontWeight: '600',
+  bannerGreen: {
+    backgroundColor: 'rgba(5,18,9,0.88)',
+    borderColor: 'rgba(92,255,106,0.45)',
   },
-  colorTabs: {
-    flex: 1,
-    flexDirection: 'row',
-    backgroundColor: '#1e293b',
-    borderRadius: 8,
-    padding: 3,
+  bannerCyan: {
+    backgroundColor: 'rgba(4,17,17,0.88)',
+    borderColor: 'rgba(43,247,229,0.45)',
   },
-  colorTab: {
-    flex: 1,
-    paddingVertical: 7,
-    alignItems: 'center',
-    borderRadius: 6,
+  bannerRed: {
+    backgroundColor: 'rgba(22,6,6,0.88)',
+    borderColor: 'rgba(255,93,93,0.45)',
   },
-  colorTabActive: {
-    backgroundColor: '#3b82f6',
-    shadowColor: '#3b82f6',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-  },
-  colorTabText: {
-    color: '#94a3b8',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  colorTabTextActive: {
-    color: '#ffffff',
-  },
-  autoScanBanner: {
-    backgroundColor: '#064e3b',
+  bannerToast: {
+    backgroundColor: 'rgba(92,255,106,0.94)',
+    borderColor: 'rgba(92,255,106,1)',
+    alignSelf: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 9,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderBottomWidth: 1,
-    borderBottomColor: '#059669',
   },
-  autoScanBannerText: {
-    color: '#d1fae5',
-    fontSize: 12,
+  bannerText: {
     flex: 1,
-    fontWeight: '700',
-  },
-  cancelBtn: {
-    backgroundColor: '#047857',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 6,
-    marginLeft: 8,
-  },
-  cancelBtnText: {
-    color: '#ffffff',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  successBanner: {
-    backgroundColor: '#059669',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    alignItems: 'center',
-  },
-  successBannerText: {
-    color: '#ffffff',
-    fontSize: 13,
+    color: colors.text,
+    fontSize: 9.5,
     fontWeight: '800',
+    letterSpacing: 0.9,
+    lineHeight: 14,
   },
-  adjustBanner: {
-    backgroundColor: '#78350f',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  bannerAction: { color: colors.green, fontSize: 10, fontWeight: '900', letterSpacing: 1 },
+  bannerToastText: { color: '#041007', fontSize: 10, fontWeight: '900', letterSpacing: 1.2 },
+
+  dockWrap: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 10, zIndex: 20 },
+  dockCard: {
+    backgroundColor: 'rgba(5,10,7,0.90)',
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.11)',
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 11,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    elevation: 10,
   },
-  adjustBannerText: {
-    color: '#fef3c7',
-    fontSize: 12,
-    flex: 1,
-    fontWeight: '600',
+  dockTop: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  turnWrap: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  turnDot: { width: 6, height: 6, borderRadius: 3 },
+  turnText: { color: colors.text, fontSize: 9.5, fontWeight: '800', letterSpacing: 1.6 },
+  eval: { marginLeft: 'auto', fontSize: 12, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  chev: { color: colors.dim, fontSize: 15, fontWeight: '800', paddingHorizontal: 2 },
+
+  bestRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 7 },
+  bestKicker: {
+    color: colors.faint,
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 1.8,
+    marginBottom: 1,
   },
-  resetBtn: {
-    backgroundColor: '#92400e',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
-    marginLeft: 8,
-  },
-  resetBtnText: {
-    color: '#ffffff',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  cameraContainer: {
-    width: '100%',
-    backgroundColor: '#000',
-  },
-  hudContainer: {
-    flex: 1,
-    padding: 12,
-    gap: 8,
-    justifyContent: 'flex-start',
-  },
-  card: {
-    backgroundColor: '#131b26',
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1.5,
-    borderColor: '#1e293b',
-  },
-  cardMyTurn: {
-    borderColor: '#10b981',
-    backgroundColor: '#062016',
-  },
-  cardOpponent: {
-    borderColor: '#334155',
-    backgroundColor: '#0f172a',
-  },
-  turnRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  badge: {
-    backgroundColor: '#059669',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  badgeText: {
-    color: '#ffffff',
+  bestLine: { flexDirection: 'row', alignItems: 'baseline', gap: 7 },
+  bestGlyph: { color: colors.text, fontSize: 20 },
+  bestMove: { color: colors.text, fontSize: 21, fontWeight: '900', letterSpacing: 0.2 },
+  bestCoords: {
+    color: colors.green,
     fontSize: 11,
     fontWeight: '800',
-    letterSpacing: 0.5,
+    fontFamily: 'monospace',
+    marginLeft: 2,
   },
-  badgeOpponent: {
-    backgroundColor: '#475569',
-  },
-  badgeOpponentText: {
-    color: '#e2e8f0',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  evalText: {
-    color: '#10b981',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  moveRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 8,
-    marginTop: 2,
-  },
-  bestMoveLabel: {
-    color: '#94a3b8',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  bestMoveText: {
-    color: '#fef08a',
-    fontSize: 24,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
-  moveCoords: {
-    color: '#10b981',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  thinkingText: {
-    color: '#94a3b8',
-    fontSize: 14,
-    fontWeight: '600',
-    fontStyle: 'italic',
-    marginTop: 4,
-  },
-  waitingText: {
-    color: '#cbd5e1',
-    fontSize: 14,
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  subHint: {
-    color: '#64748b',
-    fontSize: 11,
-    marginTop: 4,
-  },
-  gameOverTitle: {
-    color: '#f59e0b',
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  centerAlign: {
-    alignItems: 'center',
-    gap: 4,
-  },
-  actionsBar: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  actionBtn: {
+  err: { color: colors.bad, fontSize: 10, marginTop: 6 },
+
+  actions: { flexDirection: 'row', gap: 7, marginTop: 9 },
+  action: {
     flex: 1,
-    backgroundColor: '#1e293b',
-    paddingVertical: 10,
-    borderRadius: 8,
+    height: 46,
+    borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.055)',
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: 'rgba(255,255,255,0.09)',
   },
-  actionBtnText: {
-    color: '#f8fafc',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  btnDisabled: {
-    opacity: 0.35,
-  },
-  movesScroll: {
-    gap: 6,
-    paddingVertical: 2,
-  },
+  actionOn: { backgroundColor: colors.green, borderColor: colors.green },
+  actionGlyph: { color: colors.text, fontSize: 15, fontWeight: '800', lineHeight: 18 },
+  actionLabel: { color: colors.dim, fontSize: 8, fontWeight: '800', letterSpacing: 1, marginTop: 1 },
+  actionTextOn: { color: '#041007' },
+
+  moves: { gap: 6, paddingTop: 9, paddingRight: 4 },
   moveChip: {
-    backgroundColor: '#1e293b',
+    backgroundColor: 'rgba(255,255,255,0.055)',
     paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    paddingVertical: 5,
+    borderRadius: 7,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: 'rgba(255,255,255,0.07)',
   },
-  moveChipText: {
-    color: '#cbd5e1',
-    fontSize: 11,
+  moveText: {
+    color: colors.dim,
+    fontSize: 10,
     fontWeight: '600',
     fontFamily: 'monospace',
   },

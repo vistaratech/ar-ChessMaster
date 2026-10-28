@@ -1,6 +1,7 @@
 // Central tuning knobs. Most "it doesn't detect properly" issues are fixed here.
 
-// Size of the RGB buffer the camera frame is resized to (3:4, same as the camera box).
+// Size of the RGB buffer used by the simulation scripts. The live camera derives its buffer
+// from the preview aspect (480 px tall) so the homography matches what the user sees.
 export const BUF_W = 240;
 export const BUF_H = 320;
 export const CAM_ASPECT = BUF_W / BUF_H;

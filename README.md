@@ -1,19 +1,31 @@
 # AR Chess Coach
 
 Real chessboard + phone camera. The app watches the game, tracks every move (yours and your friend's),
-asks Stockfish for the best move, and shows it on the board in AR: a growing arrow, a pulsing target square
-and a ghost piece that glides from the start square to the destination.
+asks Stockfish for the best move, and draws it directly on the board:
+
+* a neon cyan trace around the physical board,
+* a soft green outline on the piece you should move,
+* a solid neon green destination square,
+* a compact `NEXT MOVE` chip anchored above the destination (`KNIGHT f6 → d5`),
+* both king and rook squares highlighted for castling.
+
+The camera is full-bleed; there are no arrows, ghost pieces or permanent grids covering the board.
 
 ## How it works
 
-1. **Calibrate once**: tap the 4 board corners (a1, h1, h8, a8). A homography maps board squares to camera pixels.
-2. **Colours are learned automatically** once the pieces are in the starting position. The app learns what "empty light square",
-   "empty dark square", "white piece" and "black piece" look like under your lighting.
+1. **Calibrate once**: drag the 4 cyan handles onto the physical corners a1, h1, h8, a8 (or use auto-detect).
+   A homography maps board squares to camera pixels. Corners are stored in physical board order, so the
+   mapping is correct whichever side of the table the phone is on.
+2. **Colours are learned automatically** once the pieces are in the starting position. The app learns what
+   "empty light square", "empty dark square", "white piece" and "black piece" look like under your lighting.
 3. **Track moves**: every ~250 ms each square is classified as empty / white / black (no piece-type recognition
    needed). The app finds the single *legal* move that explains the change (castling, en passant and captures
    all have distinct patterns) and commits it after 3 stable scans.
-4. **Hint** (best move + up to 3 candidate moves, shown as a gold arrow plus blue/grey arrows, ranked with their evals): the FEN goes to Stockfish and the best move is drawn in AR. Default is **Auto**: on-device Stockfish 17 (offline, no rate limit), falling back to chess-api.com if the native engine fails. Switch it in Settings.
+4. **Hint**: the FEN goes to Stockfish and the best move is drawn on the board. Default is **Auto**:
+   on-device Stockfish 17 (offline, no rate limit), falling back to chess-api.com if the native engine fails.
 5. **Fallback**: if the camera misreads, tap the piece and then its destination square on the live view.
+6. **Controls**: the top bar has corner adjustment, auto-detect and settings. The bottom dock shows the
+   best move, eval, move history, undo/new-game and hint mode; collapse it with the chevron for a clean AR view.
 
 ## Setup (Windows, Android)
 
@@ -56,23 +68,29 @@ npx expo run:android
 
 ## First run (about 1 minute)
 
-1. Open the app. The camera starts by itself (allow the permission).
+1. Open the app. The app now opens **straight into the full-screen camera + AR view** (allow the permission).
 2. Put the phone on a stand over the board, whole board visible, good light.
-3. Tap the 4 board corners in order: a1, h1, h8, a8 (White's left-bottom, then clockwise).
-4. Put all pieces in the starting position. The app learns the colours automatically and jumps into the game.
-5. From now on, opening the app goes **straight to the live camera + AR view**.
-   On your turn the arrow, target square and ghost piece show the best move.
-   Use "Nee: White/Black" in the game screen to say which side you play.
+3. Tap the cyan **⌖** button and drag the four handles (a1, h1, h8, a8) onto the board corners.
+   Or tap **◎** and hold the starting position in view until the app locks the board.
+4. Put all pieces in the starting position. The app learns the colours automatically.
+5. On your turn the cyan trace, green squares and `NEXT MOVE` chip show the best move.
+   Use **SETUP** to choose White/Black, hint mode, engine and depth.
+
+The settings sheet also contains the manual recovery path (adjust corners / reset corners), so the old
+separate Home / Scan / Calibrate screens are no longer needed in the main flow.
 
 ## Tuning (`src/config.ts`)
 
 | Problem | Try |
 |---|---|
-| Dots on wrong squares | Re-tap corners; keep phone steady; confirm tap order a1, h1, h8, a8 |
+| Markers on wrong squares | Re-adjust corners (⌖) with all four pieces in place; keep the phone steady |
 | Misclassifies one colour of piece | Re-learn colours under the current light; avoid glare/shadows |
 | Moves commit too slowly | lower `STABLE_SCANS` or `SCAN_INTERVAL_MS` |
 | Wrong/ghost moves committed | raise `STABLE_SCANS`; lower `MAX_MISMATCH` |
-| Small squares are noisy | raise `BUF_W/BUF_H` (keep 3:4) |
+| Small squares are noisy | the vision buffer now follows the preview aspect; raise the 480 px height in `CameraBoard.tsx` |
+
+The vision buffer is sized from the measured preview aspect (480 px tall), so a full-screen portrait camera
+crops exactly like the preview. `BUF_W/BUF_H` in `config.ts` remain the defaults used by the simulation scripts.
 
 ## Tests
 

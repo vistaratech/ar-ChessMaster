@@ -93,7 +93,7 @@ export class ErrorBoundary extends Component<Props, State> {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#0a0d12',
+    backgroundColor: '#050806',
   },
   container: {
     flex: 1,
@@ -159,15 +159,15 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   primaryBtn: {
-    backgroundColor: '#2563eb',
+    backgroundColor: '#5CFF6A',
     paddingVertical: 14,
     borderRadius: 10,
     alignItems: 'center',
   },
   primaryBtnText: {
-    color: '#ffffff',
+    color: '#041007',
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   secondaryBtn: {
     backgroundColor: '#1e293b',

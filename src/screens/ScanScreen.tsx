@@ -5,13 +5,12 @@ import CameraBoard from '../components/CameraBoard';
 import { Btn, TOP, colors } from '../components/ui';
 import { useStore } from '../store/useStore';
 import type { Pt } from '../lib/homography';
-import { BUF_H, BUF_W } from '../config';
 import { classify, learnModel, modelQuality, ColorModel } from '../vision/scanner';
 import { mismatch, occupancyOf } from '../chess/occupancy';
 import type { Screen } from '../../App';
 
 const MIN_QUALITY = 2.5; // the start position must be clearly visible
-const SAME_PX = 6; // two detections this close (buffer px) count as the same board
+const SAME_PX = 0.02; // two detections this close (normalised) count as the same board
 
 /** Open the app, show the board to the camera, pick your colour. That is all. */
 export default function ScanScreen({ go }: { go: (s: Screen) => void }) {
@@ -44,7 +43,7 @@ export default function ScanScreen({ go }: { go: (s: Screen) => void }) {
     hits.current = same ? hits.current + 1 : 1;
     if (hits.current >= 2) {
       setFound({
-        corners: [0, 1, 2, 3].map((k) => ({ x: c[k * 2] / BUF_W, y: c[k * 2 + 1] / BUF_H })),
+        corners: [0, 1, 2, 3].map((k) => ({ x: c[k * 2], y: c[k * 2 + 1] })),
         model,
       });
     }

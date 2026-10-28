@@ -10,10 +10,10 @@ import { Occ, mismatch, occupancyOf } from '../chess/occupancy';
 import type { Screen } from '../../App';
 
 const LABELS = [
-  'a1: White-oda queen-side rook irukkura corner (White paarkkum bodhu left-bottom)',
-  'h1: White-oda king-side rook corner (right-bottom)',
-  'h8: Black-oda king-side rook corner (right-top)',
-  'a8: Black-oda queen-side rook corner (left-top)',
+  'a1: White queen-side rook corner',
+  'h1: White king-side rook corner',
+  'h8: Black king-side rook corner',
+  'a8: Black queen-side rook corner',
 ];
 
 const AUTO_MIN_QUALITY = 2.0; // automatic learning only when the start position is clearly visible
