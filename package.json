@@ -10,10 +10,10 @@
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^2.1.2",
-    "@shopify/react-native-skia": "^1.5.0",
+    "@shopify/react-native-skia": "^2.14.0",
     "chess.js": "^1.4.0",
     "dawikk-stock": "^0.9.83",
-    "expo": "~58.0.19",
+    "expo": "~58.0.20",
     "expo-status-bar": "~58.0.4",
     "react": "19.3.0",
     "react-native": "0.88.0",
@@ -23,7 +23,7 @@
     "react-native-vision-camera": "^5.2.3",
     "react-native-vision-camera-resizer": "^5.2.3",
     "react-native-vision-camera-worklets": "^5.2.3",
-    "react-native-worklets": "^0.13.1",
+    "react-native-worklets": "0.13.0",
     "zustand": "^5.0.16"
   },
   "devDependencies": {
