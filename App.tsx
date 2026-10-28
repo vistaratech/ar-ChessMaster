@@ -4,7 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useStore } from './src/store/useStore';
 import GameScreen from './src/screens/GameScreen';
 
-export type Screen = 'home' | 'calibrate' | 'game';
+export type Screen = 'home' | 'calibrate' | 'game' | 'scan';
 
 export default function App() {
   const [hydrated, setHydrated] = useState(false);

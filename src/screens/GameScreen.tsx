@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   Alert,
   Pressable,
@@ -7,10 +7,14 @@ import {
   Text,
   View,
 } from 'react-native';
+import { Chess } from 'chess.js';
 import CameraBoard from '../components/CameraBoard';
 import { TOP, colors } from '../components/ui';
 import { useStore } from '../store/useStore';
 import { useGame, Status } from '../hooks/useGame';
+import { BUF_H, BUF_W } from '../config';
+import { classify, learnModel, modelQuality } from '../vision/scanner';
+import { mismatch, occupancyOf } from '../chess/occupancy';
 
 const STATUS_TEXT: Record<Status, string> = {
   'needs-colors': 'Board ready aagudhu…',
@@ -28,9 +32,39 @@ function evalText(ev: number | null, mate: number | null) {
 }
 
 export default function GameScreen({ go }: { go?: (s: any) => void }) {
-  const { corners, settings, patchSettings, newGame, setCorners, resetCorners } = useStore();
+  const { corners, settings, patchSettings, newGame, setCorners, resetCorners, setModel } = useStore();
   const g = useGame();
   const [isAdjusting, setIsAdjusting] = useState(false);
+  const [isAutoScanning, setIsAutoScanning] = useState(false);
+  const [autoScanMsg, setAutoScanMsg] = useState('');
+  const prevDetect = useRef<number[] | null>(null);
+  const detectHits = useRef(0);
+
+  const onDetect = useCallback((c: number[], feats: number[]) => {
+    const start = occupancyOf(new Chess());
+    const m = learnModel(feats, start);
+    if (!m) return;
+    if (modelQuality(m) < 1.8 || mismatch(classify(feats, m), start) > 4) {
+      detectHits.current = 0;
+      prevDetect.current = null;
+      return;
+    }
+    const p = prevDetect.current;
+    const same = !!p && c.every((v, i) => Math.abs(v - p[i]) < 6);
+    prevDetect.current = c;
+    detectHits.current = same ? detectHits.current + 1 : 1;
+    if (detectHits.current >= 2) {
+      const detectedCorners = [0, 1, 2, 3].map((k) => ({
+        x: c[k * 2] / BUF_W,
+        y: c[k * 2 + 1] / BUF_H,
+      }));
+      setCorners(detectedCorners);
+      setModel(m);
+      setIsAutoScanning(false);
+      setAutoScanMsg('✓ Board Auto-Detected & Locked!');
+      setTimeout(() => setAutoScanMsg(''), 3500);
+    }
+  }, [setCorners, setModel]);
 
   const isMyTurn = g.turn === settings.myColor;
   const isWhite = settings.myColor === 'w';
@@ -85,8 +119,22 @@ export default function GameScreen({ go }: { go?: (s: any) => void }) {
           <Text style={styles.appTitle}>♞ AR Chess Coach</Text>
           <View style={styles.topActions}>
             <Pressable
+              style={[styles.iconBtn, isAutoScanning && styles.iconBtnScanning]}
+              onPress={() => {
+                const next = !isAutoScanning;
+                setIsAutoScanning(next);
+                if (next) setIsAdjusting(false);
+              }}
+            >
+              <Text style={styles.iconBtnText}>{isAutoScanning ? '⏹ Stop' : '🔍 Auto'}</Text>
+            </Pressable>
+            <Pressable
               style={[styles.iconBtn, isAdjusting && styles.iconBtnActive]}
-              onPress={() => setIsAdjusting(!isAdjusting)}
+              onPress={() => {
+                const next = !isAdjusting;
+                setIsAdjusting(next);
+                if (next) setIsAutoScanning(false);
+              }}
             >
               <Text style={styles.iconBtnText}>{isAdjusting ? '✓ Done' : '🎯 Grid'}</Text>
             </Pressable>
@@ -120,6 +168,25 @@ export default function GameScreen({ go }: { go?: (s: any) => void }) {
         </View>
       </View>
 
+      {/* Auto-Scan Banner */}
+      {isAutoScanning && (
+        <View style={styles.autoScanBanner}>
+          <Text style={styles.autoScanBannerText}>
+            🔍 Auto-Detecting Board... போர்டை கேமராவில் நேராகக் காட்டவும் (Starting Position).
+          </Text>
+          <Pressable style={styles.cancelBtn} onPress={() => setIsAutoScanning(false)}>
+            <Text style={styles.cancelBtnText}>Stop</Text>
+          </Pressable>
+        </View>
+      )}
+
+      {/* Auto-Scan Success Toast */}
+      {!!autoScanMsg && (
+        <View style={styles.successBanner}>
+          <Text style={styles.successBannerText}>{autoScanMsg}</Text>
+        </View>
+      )}
+
       {/* Adjustment Banner when adjusting corners */}
       {isAdjusting && (
         <View style={styles.adjustBanner}>
@@ -139,6 +206,8 @@ export default function GameScreen({ go }: { go?: (s: any) => void }) {
           perspective={settings.perspective}
           isAdjustingCorners={isAdjusting}
           onCornersChange={setCorners}
+          detect={isAutoScanning}
+          onDetect={onDetect}
           onFeatures={g.onFeatures}
           onTap={(sq) => sq && g.tapSquare(sq)}
           overlay={{
@@ -300,6 +369,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#f59e0b',
     borderColor: '#d97706',
   },
+  iconBtnScanning: {
+    backgroundColor: '#10b981',
+    borderColor: '#059669',
+  },
   iconBtnText: {
     color: '#f8fafc',
     fontSize: 12,
@@ -342,6 +415,45 @@ const styles = StyleSheet.create({
   },
   colorTabTextActive: {
     color: '#ffffff',
+  },
+  autoScanBanner: {
+    backgroundColor: '#064e3b',
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderBottomWidth: 1,
+    borderBottomColor: '#059669',
+  },
+  autoScanBannerText: {
+    color: '#d1fae5',
+    fontSize: 12,
+    flex: 1,
+    fontWeight: '700',
+  },
+  cancelBtn: {
+    backgroundColor: '#047857',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+    marginLeft: 8,
+  },
+  cancelBtnText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  successBanner: {
+    backgroundColor: '#059669',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  successBannerText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '800',
   },
   adjustBanner: {
     backgroundColor: '#78350f',

@@ -29,3 +29,7 @@ yarn-error.log*
 # macOS / Windows system files
 .DS_Store
 Thumbs.db
+
+# Temporary input folders
+code/
+*.zip

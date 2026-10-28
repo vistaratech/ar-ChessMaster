@@ -8,6 +8,7 @@ import {
   getBoardCorners, Pt, computeHomography, screenToSquare,
 } from '../lib/homography';
 import { extractFeatures } from '../vision/scanner';
+import { detectBoard } from '../vision/detector';
 import { BUF_H, BUF_W, CAM_ASPECT, SAMPLE_INSET, SAMPLE_N } from '../config';
 
 /**
@@ -19,8 +20,10 @@ function ScannerCamera(props: {
   active: boolean;
   hBuf: number[] | null; // board -> BUF_W x BUF_H pixels
   emit: (feats: number[]) => void; // stable identity
+  detect?: boolean;
+  emitDetect?: (corners: number[], feats: number[]) => void;
 }) {
-  const { active, hBuf, emit } = props;
+  const { active, hBuf, emit, detect, emitDetect } = props;
   const { resizer } = useResizer({
     width: BUF_W,
     height: BUF_H,
@@ -36,18 +39,40 @@ function ScannerCamera(props: {
     onFrame(frame) {
       'worklet';
       try {
-        if (!hBuf || !resizer) return;
+        if (!resizer) return;
         const gpu = resizer.resize(frame);
-        let feats: number[];
         try {
-          feats = extractFeatures(
-            new Uint8Array(gpu.getPixelBuffer()),
-            BUF_W, BUF_H, hBuf, SAMPLE_N, SAMPLE_INSET
-          );
+          const pixelBuf = new Uint8Array(gpu.getPixelBuffer());
+
+          if (detect && emitDetect) {
+            const d = detectBoard(pixelBuf, BUF_W, BUF_H);
+            if (d) {
+              const feats = extractFeatures(
+                pixelBuf,
+                BUF_W,
+                BUF_H,
+                d.h,
+                SAMPLE_N,
+                SAMPLE_INSET
+              );
+              scheduleOnRN(emitDetect, d.corners, feats);
+            }
+          }
+
+          if (hBuf) {
+            const feats = extractFeatures(
+              pixelBuf,
+              BUF_W,
+              BUF_H,
+              hBuf,
+              SAMPLE_N,
+              SAMPLE_INSET
+            );
+            scheduleOnRN(emit, feats);
+          }
         } finally {
           gpu.dispose();
         }
-        scheduleOnRN(emit, feats);
       } finally {
         frame.dispose();
       }
@@ -68,7 +93,7 @@ function ScannerCamera(props: {
 type Props = {
   active?: boolean;
   /** 0..4 corners as fractions of the camera box. 4 corners => grid + scanning. */
-  corners: Pt[];
+  corners: Pt[] | null;
   perspective?: 'w' | 'b';
   onFeatures: (feats: number[]) => void;
   /** Called on every tap: the square under the finger (if calibrated) and the normalised point. */
@@ -76,6 +101,8 @@ type Props = {
   overlay?: Partial<OverlayState>;
   isAdjustingCorners?: boolean;
   onCornersChange?: (corners: Pt[]) => void;
+  detect?: boolean;
+  onDetect?: (corners: number[], feats: number[]) => void;
 };
 
 export default function CameraBoard({
@@ -87,6 +114,8 @@ export default function CameraBoard({
   overlay,
   isAdjustingCorners = false,
   onCornersChange,
+  detect = false,
+  onDetect,
 }: Props) {
   const { hasPermission, requestPermission } = useCameraPermission();
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -101,8 +130,17 @@ export default function CameraBoard({
   handlerRef.current = onFeatures;
   const emit = useCallback((f: number[]) => handlerRef.current(f), []);
 
+  const detectHandlerRef = useRef(onDetect);
+  detectHandlerRef.current = onDetect;
+  const emitDetect = useCallback(
+    (c: number[], f: number[]) => detectHandlerRef.current?.(c, f),
+    []
+  );
+
   const full = corners && corners.length === 4 ? corners : null;
-  const key = full ? full.map((c) => `${Math.round(c.x * 1e4)},${Math.round(c.y * 1e4)}`).join('|') + perspective : 'none';
+  const key =
+    (full ? full.map((c) => `${Math.round(c.x * 1e4)},${Math.round(c.y * 1e4)}`).join('|') + perspective : 'none') +
+    (detect ? '-detect' : '');
 
   const boardCorners = useMemo(() => getBoardCorners(perspective), [perspective]);
 
@@ -184,7 +222,14 @@ export default function CameraBoard({
       onTouchEnd={onTouchEnd}
     >
       <View style={StyleSheet.absoluteFill} pointerEvents="none">
-        <ScannerCamera key={key} active={active} hBuf={hBuf} emit={emit} />
+        <ScannerCamera
+          key={key}
+          active={active}
+          hBuf={hBuf}
+          emit={emit}
+          detect={detect}
+          emitDetect={emitDetect}
+        />
       </View>
       {size.w > 0 && (
         <AROverlay
