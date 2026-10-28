@@ -3,18 +3,36 @@ import { ActivityIndicator, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useStore } from './src/store/useStore';
 import GameScreen from './src/screens/GameScreen';
+import { ErrorBoundary } from './src/components/ErrorBoundary';
 
 export type Screen = 'home' | 'calibrate' | 'game' | 'scan';
 
-export default function App() {
+function AppContent() {
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    if (useStore.persist.hasHydrated()) {
+    let unmounted = false;
+    try {
+      if (useStore.persist?.hasHydrated?.()) {
+        setHydrated(true);
+        return;
+      }
+      const unsub = useStore.persist?.onFinishHydration?.(() => {
+        if (!unmounted) setHydrated(true);
+      });
+      // Safety timeout: if hydration callback never fires, proceed anyway after 800ms
+      const timer = setTimeout(() => {
+        if (!unmounted) setHydrated(true);
+      }, 800);
+
+      return () => {
+        unmounted = true;
+        unsub?.();
+        clearTimeout(timer);
+      };
+    } catch {
       setHydrated(true);
-      return;
     }
-    return useStore.persist.onFinishHydration(() => setHydrated(true));
   }, []);
 
   if (!hydrated) {
@@ -30,5 +48,13 @@ export default function App() {
       <StatusBar style="light" />
       <GameScreen />
     </>
+  );
+}
+
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <AppContent />
+    </ErrorBoundary>
   );
 }

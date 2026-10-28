@@ -86,6 +86,7 @@ function ScannerCamera(props: {
       isActive={active}
       outputs={[frameOutput]}
       resizeMode="cover"
+      onError={(e) => console.warn('[VisionCamera] error:', e)}
     />
   );
 }

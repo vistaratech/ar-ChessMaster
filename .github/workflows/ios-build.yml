@@ -582,10 +582,15 @@ jobs:
             cd "$GITHUB_WORKSPACE"
             mkdir -p build/Payload
             cp -R "$APP_PATH" build/Payload/
+            APP_NAME=$(basename "$APP_PATH")
+            if [ -d "build/Payload/$APP_NAME/Frameworks" ]; then
+              find "build/Payload/$APP_NAME/Frameworks" -type d -name "*.framework" -exec codesign --force --sign - {} \; 2>/dev/null || true
+            fi
+            codesign --force --sign - "build/Payload/$APP_NAME" 2>/dev/null || true
             cd build
             zip -rq "$BUILD_ID.ipa" Payload
             rm -rf Payload
-            echo "Created unsigned IPA: build/$BUILD_ID.ipa"
+            echo "Created IPA: build/$BUILD_ID.ipa"
           fi
 
       - name: Upload IPA artifact
