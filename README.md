@@ -27,7 +27,10 @@ The camera is full-bleed; there are no arrows, ghost pieces or permanent grids c
 6. **Controls**: the top bar has corner adjustment, auto-detect and settings. The bottom dock shows the
    best move, eval, move history, undo/new-game and hint mode; collapse it with the chevron for a clean AR view.
 
-## Setup (Windows, Android)
+## Setup (Windows, macOS or Linux)
+
+You do **not** need a Mac. iOS builds run on GitHub Actions through the included `builder.exe`
+(see Option C below); Android can be built locally or with EAS.
 
 ```bash
 npx create-expo-app@latest ar-chess --template blank-typescript
@@ -41,8 +44,8 @@ npx expo install react-native-vision-camera react-native-vision-camera-worklets 
 npm i chess.js zustand dawikk-stock
 ```
 
-Copy `App.tsx`, `app.json`, `eas.json` and `src/` from this folder over the template.
-(`app.json` already has the camera permission and Android package id.)
+Copy `App.tsx`, `app.json`, `eas.json`, `builder.json`, `.github/workflows/ios-build.yml` and `src/` from
+this folder over the template. (`app.json` already has the camera permissions and the Android/iOS bundle ids.)
 
 ## Install on your phone
 
@@ -65,6 +68,35 @@ Open that link on your phone, download the `.apk`, allow "Install unknown apps",
 npx expo prebuild --clean
 npx expo run:android
 ```
+
+**Option C: iOS IPA from GitHub Actions (no Mac required)**
+
+The committed `.github/workflows/ios-build.yml` runs `expo prebuild`, `pod install` and `xcodebuild` on a
+macOS runner. Trigger it from Windows, macOS or Linux with the bundled `builder.exe`:
+
+```powershell
+.\builder.exe ios build --unsigned
+```
+
+The IPA is downloaded to `dist/` (override with `-o <dir>`). Snapshots include uncommitted changes.
+
+An unsigned IPA **cannot be installed on a normal iPhone**; it is useful for inspection and for re-signing
+tools. To run it on a device, either:
+
+* Sideload the IPA with Sideloadly or AltStore, which re-signs it with your Apple ID. Free Apple IDs expire
+  after 7 days; a paid developer account lasts a year.
+* Set up CI signing once (Apple Developer certificate + provisioning profile, still no Mac needed):
+
+  ```powershell
+  .\builder.exe signing setup -c cert.p12 -p profile.mobileprovision
+  .\builder.exe ios build
+  ```
+
+  If you only have a `.cer` from the Apple portal, `builder.exe signing csr` and
+  `builder.exe signing p12` create the key request and assemble the `.p12` locally.
+
+To try the app in an iOS Simulator from a non-Mac machine, use `.\builder.exe ios share`
+(requires MobAI Pro and a `MOBAI_API_KEY` repository secret).
 
 ## First run (about 1 minute)
 
