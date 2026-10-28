@@ -23,11 +23,12 @@ export type OverlayState = {
   check: string | null;
   occ: Occ | null; // debug: what the camera thinks is on each square
   showGrid: boolean;
+  isAdjustingCorners: boolean;
 };
 
 export const EMPTY_OVERLAY: OverlayState = {
   hint: null, hintPiece: null, alts: [], lastMove: null, selected: null,
-  targets: [], check: null, occ: null, showGrid: true,
+  targets: [], check: null, occ: null, showGrid: true, isAdjustingCorners: false,
 };
 
 type Props = OverlayState & {
@@ -72,7 +73,7 @@ function arrowGeo(H: number[], from: string, to: string) {
 }
 
 export default function AROverlay(props: Props) {
-  const { H, hint, hintPiece, alts, lastMove, selected, targets, check, occ, showGrid, cornerPx } = props;
+  const { H, hint, hintPiece, alts, lastMove, selected, targets, check, occ, showGrid, isAdjustingCorners, cornerPx } = props;
 
   // ---- static geometry ------------------------------------------------------------
   const grid = useMemo(() => {
@@ -215,8 +216,18 @@ export default function AROverlay(props: Props) {
         ))}
         {cornerPx.map((p, i) => (
           <React.Fragment key={'c' + i}>
-            <Circle cx={p.x} cy={p.y} r={10} color="rgba(0,0,0,0.6)" />
-            <Circle cx={p.x} cy={p.y} r={7} color="#FFD400" />
+            {isAdjustingCorners ? (
+              <>
+                <Circle cx={p.x} cy={p.y} r={28} color="rgba(255, 212, 0, 0.25)" />
+                <Circle cx={p.x} cy={p.y} r={20} style="stroke" strokeWidth={3} color="#FFD400" />
+                <Circle cx={p.x} cy={p.y} r={8} color="#FFFFFF" />
+              </>
+            ) : (
+              <>
+                <Circle cx={p.x} cy={p.y} r={6} color="rgba(0,0,0,0.5)" />
+                <Circle cx={p.x} cy={p.y} r={4} color="rgba(255, 212, 0, 0.7)" />
+              </>
+            )}
           </React.Fragment>
         ))}
       </Canvas>

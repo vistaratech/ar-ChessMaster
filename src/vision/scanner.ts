@@ -56,6 +56,22 @@ export function extractFeatures(
 /** Classes: 0 = empty light square, 1 = empty dark square, 2 = white piece, 3 = black piece. */
 export type ColorModel = { mean: number[][]; vari: number[][] };
 
+/** Built-in general color model for wooden/vinyl boards so scanning works out of the box without manual training. */
+export const DEFAULT_COLOR_MODEL: ColorModel = {
+  mean: [
+    [210, 200, 180, 6],   // 0: empty light square
+    [110, 85, 65, 6],     // 1: empty dark square
+    [230, 225, 215, 24],  // 2: white piece
+    [45, 45, 45, 24],     // 3: black piece
+  ],
+  vari: [
+    [400, 400, 400, 80],
+    [400, 400, 400, 80],
+    [600, 600, 600, 180],
+    [600, 600, 600, 180],
+  ],
+};
+
 export const isDark = (file: number, rank: number) => (file + rank) % 2 === 0; // a1 is dark
 
 /**

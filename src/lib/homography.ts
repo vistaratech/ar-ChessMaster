@@ -50,13 +50,28 @@ export function applyHomography(h: number[], p: Pt): Pt {
   };
 }
 
-/** Corners in board space, in the order the user taps them: a1, h1, h8, a8. */
-export const BOARD_CORNERS: Pt[] = [
-  { x: 0, y: 0 },
-  { x: 8, y: 0 },
-  { x: 8, y: 8 },
-  { x: 0, y: 8 },
-];
+/** Board corners in board space (0..8, 0..8).
+ * In White perspective: bottom-left=a1(0,0), bottom-right=h1(8,0), top-right=h8(8,8), top-left=a8(0,8).
+ * In Black perspective: bottom-left=h8(8,8), bottom-right=a8(0,8), top-right=a1(0,0), top-left=h1(8,0).
+ */
+export function getBoardCorners(perspective: 'w' | 'b' = 'w'): Pt[] {
+  if (perspective === 'b') {
+    return [
+      { x: 8, y: 8 },
+      { x: 0, y: 8 },
+      { x: 0, y: 0 },
+      { x: 8, y: 0 },
+    ];
+  }
+  return [
+    { x: 0, y: 0 },
+    { x: 8, y: 0 },
+    { x: 8, y: 8 },
+    { x: 0, y: 8 },
+  ];
+}
+
+export const BOARD_CORNERS: Pt[] = getBoardCorners('w');
 
 export function squareName(file: number, rank: number): string {
   return String.fromCharCode(97 + file) + (rank + 1);

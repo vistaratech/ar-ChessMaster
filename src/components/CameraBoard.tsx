@@ -5,7 +5,7 @@ import { useResizer } from 'react-native-vision-camera-resizer';
 import { scheduleOnRN } from 'react-native-worklets';
 import AROverlay, { EMPTY_OVERLAY, OverlayState } from './AROverlay';
 import {
-  BOARD_CORNERS, Pt, computeHomography, screenToSquare,
+  getBoardCorners, Pt, computeHomography, screenToSquare,
 } from '../lib/homography';
 import { extractFeatures } from '../vision/scanner';
 import { BUF_H, BUF_W, CAM_ASPECT, SAMPLE_INSET, SAMPLE_N } from '../config';
@@ -67,17 +67,30 @@ function ScannerCamera(props: {
 
 type Props = {
   active?: boolean;
-  /** 0..4 corner taps as fractions of the camera box. 4 corners => grid + scanning. */
-  corners: Pt[] | null;
+  /** 0..4 corners as fractions of the camera box. 4 corners => grid + scanning. */
+  corners: Pt[];
+  perspective?: 'w' | 'b';
   onFeatures: (feats: number[]) => void;
   /** Called on every tap: the square under the finger (if calibrated) and the normalised point. */
   onTap?: (sq: string | null, p: Pt) => void;
   overlay?: Partial<OverlayState>;
+  isAdjustingCorners?: boolean;
+  onCornersChange?: (corners: Pt[]) => void;
 };
 
-export default function CameraBoard({ active = true, corners, onFeatures, onTap, overlay }: Props) {
+export default function CameraBoard({
+  active = true,
+  corners,
+  perspective = 'w',
+  onFeatures,
+  onTap,
+  overlay,
+  isAdjustingCorners = false,
+  onCornersChange,
+}: Props) {
   const { hasPermission, requestPermission } = useCameraPermission();
   const [size, setSize] = useState({ w: 0, h: 0 });
+  const [activeCorner, setActiveCorner] = useState<number | null>(null);
 
   useEffect(() => {
     if (!hasPermission) requestPermission();
@@ -89,27 +102,62 @@ export default function CameraBoard({ active = true, corners, onFeatures, onTap,
   const emit = useCallback((f: number[]) => handlerRef.current(f), []);
 
   const full = corners && corners.length === 4 ? corners : null;
-  const key = full ? full.map((c) => `${Math.round(c.x * 1e4)},${Math.round(c.y * 1e4)}`).join('|') : 'none';
+  const key = full ? full.map((c) => `${Math.round(c.x * 1e4)},${Math.round(c.y * 1e4)}`).join('|') + perspective : 'none';
+
+  const boardCorners = useMemo(() => getBoardCorners(perspective), [perspective]);
 
   const hBuf = useMemo(
-    () => (full ? computeHomography(BOARD_CORNERS, full.map((c) => ({ x: c.x * BUF_W, y: c.y * BUF_H }))) : null),
-    [full]
+    () => (full ? computeHomography(boardCorners, full.map((c) => ({ x: c.x * BUF_W, y: c.y * BUF_H }))) : null),
+    [full, boardCorners]
   );
   const px = useCallback((c: Pt) => ({ x: c.x * size.w, y: c.y * size.h }), [size]);
   const H = useMemo(
-    () => (full && size.w ? computeHomography(BOARD_CORNERS, full.map(px)) : null),
-    [full, size, px]
+    () => (full && size.w ? computeHomography(boardCorners, full.map(px)) : null),
+    [full, size, px, boardCorners]
   );
   const Hinv = useMemo(
-    () => (full && size.w ? computeHomography(full.map(px), BOARD_CORNERS) : null),
-    [full, size, px]
+    () => (full && size.w ? computeHomography(full.map(px), boardCorners) : null),
+    [full, size, px, boardCorners]
   );
   const cornerPx = useMemo(() => (corners ?? []).map(px), [corners, px]);
 
   const onLayout = (e: LayoutChangeEvent) =>
     setSize({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height });
 
+  const onTouchStart = (e: GestureResponderEvent) => {
+    if (!isAdjustingCorners || !size.w || !corners || corners.length !== 4) return;
+    const { locationX, locationY } = e.nativeEvent;
+    let closest = 0;
+    let minDist = Infinity;
+    corners.forEach((c, idx) => {
+      const cx = c.x * size.w;
+      const cy = c.y * size.h;
+      const dist = Math.hypot(cx - locationX, cy - locationY);
+      if (dist < minDist) {
+        minDist = dist;
+        closest = idx;
+      }
+    });
+    if (minDist < 80) {
+      setActiveCorner(closest);
+    }
+  };
+
+  const onTouchMove = (e: GestureResponderEvent) => {
+    if (!isAdjustingCorners || activeCorner === null || !size.w || !onCornersChange || !corners) return;
+    const { locationX, locationY } = e.nativeEvent;
+    const nx = Math.max(0.01, Math.min(0.99, locationX / size.w));
+    const ny = Math.max(0.01, Math.min(0.99, locationY / size.h));
+    const next = [...corners];
+    next[activeCorner] = { x: nx, y: ny };
+    onCornersChange(next);
+  };
+
   const onTouchEnd = (e: GestureResponderEvent) => {
+    if (isAdjustingCorners) {
+      setActiveCorner(null);
+      return;
+    }
     if (!size.w || !onTap) return;
     const { locationX, locationY } = e.nativeEvent;
     const sq = Hinv ? screenToSquare(Hinv, { x: locationX, y: locationY }) : null;
@@ -128,7 +176,13 @@ export default function CameraBoard({ active = true, corners, onFeatures, onTap,
   }
 
   return (
-    <View style={styles.box} onLayout={onLayout} onTouchEnd={onTouchEnd}>
+    <View
+      style={styles.box}
+      onLayout={onLayout}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+    >
       <View style={StyleSheet.absoluteFill} pointerEvents="none">
         <ScannerCamera key={key} active={active} hBuf={hBuf} emit={emit} />
       </View>
@@ -136,6 +190,7 @@ export default function CameraBoard({ active = true, corners, onFeatures, onTap,
         <AROverlay
           {...EMPTY_OVERLAY}
           {...overlay}
+          isAdjustingCorners={isAdjustingCorners}
           width={size.w}
           height={size.h}
           H={H}
